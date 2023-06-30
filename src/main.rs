@@ -35,6 +35,13 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    if !file_exists("/usr/bin/7z") {
+        println!("7z not found, installing...");
+        //pacman -S p7zip --noconfirm
+        let output = cmd(".", "pacman", vec!["-S", "p7zip", "--noconfirm"])?;
+        println!("Output: {}", output);
+    }
+
     // generate a random directory, and extract the rar files to it.
     let temp_dir_name = Alphanumeric.sample_string(&mut random, 10);
 
@@ -83,6 +90,10 @@ fn main() -> Result<()> {
     println!("Done! {}", temp_dir_name);
 
     Ok(())
+}
+
+fn file_exists(path: &str) -> bool {
+    return std::path::Path::new(path).exists();
 }
 
 fn cmd(working_dir: &str, program: &str, args: Vec<&str>) -> Result<String> {
