@@ -2,6 +2,8 @@ use anyhow::anyhow;
 use anyhow::Result;
 use rand::distributions::Alphanumeric;
 use rand::distributions::DistString;
+use rand::rngs::ThreadRng;
+use std::path::PathBuf;
 use std::process::Command;
 
 fn main() -> Result<()> {
@@ -17,21 +19,10 @@ fn main() -> Result<()> {
     }
 
     // check for any rar files in the folder.
-    let files = std::fs::read_dir(&src_dir)?;
-    let mut rar_files = Vec::new();
-    for file in files {
-        let file = file?;
-        let path = file.path();
-        if path.is_file() {
-            let ext = path.extension();
-            if ext.is_some() && ext.unwrap() == "rar" {
-                rar_files.push(path);
-            }
-        }
-    }
+    let rar_files = find_rar_files(&src_dir)?;
 
     if rar_files.len() == 0 {
-        println!("No rar files found in directory. Skipping. {:?}", src_dir);
+        println!("No rar files found in directory/subdirectories. Skipping. {:?}", src_dir);
         return Ok(());
     }
 
@@ -42,17 +33,27 @@ fn main() -> Result<()> {
         println!("Output: {}", output);
     }
 
+    for item in rar_files {
+        let _ = extract_file(&item, &mut random, &src_dir);
+    }
+
+    Ok(())
+}
+
+fn extract_file(item: &PathBuf, random: &mut ThreadRng, src_dir: &str) -> Result<()> {
     // generate a random directory, and extract the rar files to it.
-    let temp_dir_name = Alphanumeric.sample_string(&mut random, 10);
+    let temp_dir_name = Alphanumeric.sample_string(random, 10);
 
     // get parent path of src_dir
-    let parent_path = std::path::Path::new(&src_dir).parent().unwrap();
+    let parent_path = std::path::Path::new(src_dir).parent().unwrap();
+    println!("Parent Path: {}", parent_path.to_str().unwrap());
 
     let full_dir = format!("{}/{}", parent_path.to_str().unwrap(), temp_dir_name);
     // create the directory
     std::fs::create_dir(&full_dir)?;
 
-    let output = cmd(src_dir.as_str(), "7z", vec!["-y", format!("-o{}", full_dir).as_str(), "x", "*.rar"])?;
+    println!("Workdir '{}' - Extracting {} to {}", item.parent().unwrap().to_str().unwrap(), item.to_str().unwrap(), full_dir);
+    let output = cmd(item.parent().unwrap().to_str().unwrap(), "7z", vec!["-y", format!("-o{}", full_dir).as_str(), "x", item.to_str().unwrap()])?;
     println!("Output: {}", output);
 
     // move all files from full_dir to src_dir
@@ -61,10 +62,20 @@ fn main() -> Result<()> {
         let item = item?;
         let path = item.path();
         if path.is_file() {
+            // if it's a rar file, extract that file too.
+            match path.extension() {
+                Some(ext) => {
+                    if ext == "rar" {
+                        let _ = extract_file(&path, random, src_dir);
+                        continue;
+                    }
+                }
+                None => ()
+            };
             let file_name = path.file_name().unwrap();
             let file_name = file_name.to_str().unwrap();
             let new_path = format!("{}/{}", src_dir, file_name);
-            println!("Moving {} to {}", file_name, new_path);
+            println!("Moving {} to {}", path.to_str().unwrap(), new_path);
             let result = std::fs::rename(&path, &new_path);
             if result.is_err() {
                 println!("Error moving file: {:?}", result);
@@ -90,6 +101,26 @@ fn main() -> Result<()> {
     println!("Done! {}", temp_dir_name);
 
     Ok(())
+}
+
+// find all rar files recursively in a directory
+fn find_rar_files(find_path: &str) -> Result<Vec<std::path::PathBuf>> {
+    let mut files = Vec::new();
+    let items = std::fs::read_dir(find_path)?;
+    for item in items {
+        let item = item?;
+        let path = item.path();
+        if path.is_file() {
+            let ext = path.extension();
+            if ext.is_some() && ext.unwrap() == "rar" {
+                files.push(PathBuf::from(find_path).join(path));
+            }
+        } else {
+            let sub_files = find_rar_files(path.to_str().unwrap())?;
+            files.extend(sub_files);
+        }
+    }
+    return Ok(files);
 }
 
 fn file_exists(path: &str) -> bool {
