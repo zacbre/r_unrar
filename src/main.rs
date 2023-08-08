@@ -133,15 +133,14 @@ fn cmd(working_dir: &str, program: &str, args: Vec<&str>) -> Result<String> {
     command.args(args);
     command.current_dir(working_dir);
     let output = command.output().expect("Failed to execute process!");
-    let status = command.status().expect("Failed to execute process!");
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    if !status.success() {
+    if !output.status.success() {
         return Err(anyhow!(format!(
             "Error while running: (status: {:?}) {}, {}",
-            status.code(),
+            output.status.code(),
             program,
             stderr
         )));
